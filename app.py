@@ -3,14 +3,10 @@ app.py
 ------
 Main entry point for the AI Resume Analyzer.
 Run with: streamlit run app.py
-
-This file handles UI only. All logic lives in modules/.
-Think of this as the "front door" of the application.
 """
 
 import streamlit as st
 
-# ── Page Config ───────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="AI Resume Analyzer",
     page_icon="📄",
@@ -18,7 +14,6 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Header ────────────────────────────────────────────────────────────────────
 st.title("📄 AI Resume Analyzer")
 st.markdown(
     "Upload your resume and paste a job description to get an **ATS score**, "
@@ -26,7 +21,6 @@ st.markdown(
 )
 st.divider()
 
-# ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.header("⚙️ How to Use")
     st.markdown("""
@@ -38,7 +32,6 @@ with st.sidebar:
     st.divider()
     st.info("💡 Tip: Tailor your resume for each job for a higher ATS score.")
 
-# ── Two Column Input Layout ───────────────────────────────────────────────────
 col1, col2 = st.columns(2)
 
 with col1:
@@ -64,7 +57,6 @@ with col2:
 
 st.divider()
 
-# ── Analyze Button ────────────────────────────────────────────────────────────
 analyze_clicked = st.button(
     "🔍 Analyze Resume",
     type="primary",
@@ -72,11 +64,13 @@ analyze_clicked = st.button(
     disabled=(uploaded_file is None or len(job_description.strip()) == 0),
 )
 
-# ── Analysis Output ───────────────────────────────────────────────────────────
 if analyze_clicked:
     with st.spinner("Analyzing your resume... ⏳"):
 
         from modules.parser import extract_text_from_pdf, get_word_count
+        from modules.skill_extractor import get_skill_match
+        from modules.scorer import calculate_ats_score, generate_suggestions
+        from modules.nlp_processor import clean_text
 
         resume_text = extract_text_from_pdf(uploaded_file)
 
@@ -87,27 +81,109 @@ if analyze_clicked:
             )
             st.stop()
 
-        st.success("✅ Resume parsed successfully!")
+        cleaned_resume = clean_text(resume_text)
+        cleaned_jd = clean_text(job_description)
 
-        with st.expander("📃 View Extracted Resume Text"):
-            st.text_area(
-                "Raw extracted text:",
-                value=resume_text,
-                height=300,
-                disabled=True,
-            )
+        skill_results = get_skill_match(resume_text, job_description)
 
-        st.info(
-            f"📊 Resume: **{get_word_count(resume_text)} words**  |  "
-            f"Job Description: **{get_word_count(job_description)} words**"
+        score_results = calculate_ats_score(
+            cleaned_resume,
+            cleaned_jd,
+            skill_results["match_percentage"],
         )
 
-        st.warning(
-            "🔧 Full NLP analysis coming in the next step! "
-            "Scoring, skill extraction, and dashboard are being built."
+        suggestions = generate_suggestions(
+            missing_skills=skill_results["missing_skills"],
+            ats_score=score_results["ats_score"],
+            text_similarity=score_results["text_similarity"],
+            skill_match_percentage=score_results["skill_match_score"],
         )
 
-# ── Footer ────────────────────────────────────────────────────────────────────
+    st.success("✅ Analysis complete!")
+    st.divider()
+
+    st.subheader("🎯 ATS Compatibility Score")
+    score_col1, score_col2, score_col3, score_col4 = st.columns(4)
+
+    with score_col1:
+        st.metric(label="ATS Score", value=f"{score_results['ats_score']}/100")
+    with score_col2:
+        st.metric(label="Skill Match", value=f"{score_results['skill_match_score']}%")
+    with score_col3:
+        st.metric(label="Text Similarity", value=f"{score_results['text_similarity']}%")
+    with score_col4:
+        st.metric(label="Keyword Score", value=f"{score_results['keyword_score']}%")
+
+    ats = score_results["ats_score"]
+    if ats >= 80:
+        st.success(f"🟢 **{score_results['category']}** — Your resume is well optimized!")
+    elif ats >= 60:
+        st.info(f"🔵 **{score_results['category']}** — Good match with room for improvement.")
+    elif ats >= 40:
+        st.warning(f"🟡 **{score_results['category']}** — Moderate match. Consider tailoring.")
+    else:
+        st.error(f"🔴 **{score_results['category']}** — Low match. Significant changes needed.")
+
+    st.progress(int(ats))
+    st.divider()
+
+    st.subheader("📊 Score Breakdown")
+    b = score_results["breakdown"]
+    breakdown_col1, breakdown_col2, breakdown_col3 = st.columns(3)
+
+    with breakdown_col1:
+        st.metric("Skill Contribution (50%)", f"{b['skill_match_contribution']}")
+    with breakdown_col2:
+        st.metric("Similarity Contribution (40%)", f"{b['similarity_contribution']}")
+    with breakdown_col3:
+        st.metric("Keyword Contribution (10%)", f"{b['keyword_contribution']}")
+
+    st.divider()
+
+    st.subheader("🛠️ Skills Analysis")
+    skills_col1, skills_col2, skills_col3 = st.columns(3)
+
+    with skills_col1:
+        st.markdown("### ✅ Matched Skills")
+        if skill_results["matched_skills"]:
+            for skill in skill_results["matched_skills"]:
+                st.success(f"✓ {skill}")
+        else:
+            st.info("No matching skills found.")
+
+    with skills_col2:
+        st.markdown("### ❌ Missing Skills")
+        if skill_results["missing_skills"]:
+            for skill in skill_results["missing_skills"]:
+                st.error(f"✗ {skill}")
+        else:
+            st.success("No missing skills!")
+
+    with skills_col3:
+        st.markdown("### ➕ Extra Skills")
+        st.caption("Skills you have beyond what JD requires")
+        if skill_results["extra_skills"]:
+            for skill in skill_results["extra_skills"]:
+                st.info(f"+ {skill}")
+        else:
+            st.info("No extra skills detected.")
+
+    st.divider()
+
+    st.subheader("💡 Improvement Suggestions")
+    for i, suggestion in enumerate(suggestions, 1):
+        st.warning(f"**{i}.** {suggestion}")
+
+    st.divider()
+
+    with st.expander("📃 View Extracted Resume Text"):
+        st.text_area(
+            "Raw extracted text:",
+            value=resume_text,
+            height=300,
+            disabled=True,
+        )
+
 st.divider()
 st.markdown(
     "<div style='text-align:center;color:gray;font-size:0.85em;'>"
