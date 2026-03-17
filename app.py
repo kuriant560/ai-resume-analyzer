@@ -1,10 +1,3 @@
-"""
-app.py
-------
-Main entry point for the AI Resume Analyzer.
-Run with: streamlit run app.py
-"""
-
 import streamlit as st
 
 st.set_page_config(
@@ -71,6 +64,12 @@ if analyze_clicked:
         from modules.skill_extractor import get_skill_match
         from modules.scorer import calculate_ats_score, generate_suggestions
         from modules.nlp_processor import clean_text
+        from modules.visualizer import (
+            create_ats_gauge,
+            create_score_breakdown_chart,
+            create_skill_match_chart,
+            create_keyword_bar_chart,
+        )
 
         resume_text = extract_text_from_pdf(uploaded_file)
 
@@ -83,15 +82,12 @@ if analyze_clicked:
 
         cleaned_resume = clean_text(resume_text)
         cleaned_jd = clean_text(job_description)
-
         skill_results = get_skill_match(resume_text, job_description)
-
         score_results = calculate_ats_score(
             cleaned_resume,
             cleaned_jd,
             skill_results["match_percentage"],
         )
-
         suggestions = generate_suggestions(
             missing_skills=skill_results["missing_skills"],
             ats_score=score_results["ats_score"],
@@ -102,45 +98,62 @@ if analyze_clicked:
     st.success("✅ Analysis complete!")
     st.divider()
 
+    # ── Section 1: ATS Score + Gauge ─────────────────────────────────────────
     st.subheader("🎯 ATS Compatibility Score")
-    score_col1, score_col2, score_col3, score_col4 = st.columns(4)
 
-    with score_col1:
-        st.metric(label="ATS Score", value=f"{score_results['ats_score']}/100")
-    with score_col2:
-        st.metric(label="Skill Match", value=f"{score_results['skill_match_score']}%")
-    with score_col3:
-        st.metric(label="Text Similarity", value=f"{score_results['text_similarity']}%")
-    with score_col4:
-        st.metric(label="Keyword Score", value=f"{score_results['keyword_score']}%")
+    gauge_col, metrics_col = st.columns([1, 1])
 
-    ats = score_results["ats_score"]
-    if ats >= 80:
-        st.success(f"🟢 **{score_results['category']}** — Your resume is well optimized!")
-    elif ats >= 60:
-        st.info(f"🔵 **{score_results['category']}** — Good match with room for improvement.")
-    elif ats >= 40:
-        st.warning(f"🟡 **{score_results['category']}** — Moderate match. Consider tailoring.")
-    else:
-        st.error(f"🔴 **{score_results['category']}** — Low match. Significant changes needed.")
+    with gauge_col:
+        gauge_fig = create_ats_gauge(score_results["ats_score"])
+        st.plotly_chart(gauge_fig, use_container_width=True)
 
-    st.progress(int(ats))
-    st.divider()
+    with metrics_col:
+        st.markdown("### Score Summary")
+        score_col1, score_col2 = st.columns(2)
+        with score_col1:
+            st.metric("ATS Score", f"{score_results['ats_score']}/100")
+            st.metric("Skill Match", f"{score_results['skill_match_score']}%")
+        with score_col2:
+            st.metric("Text Similarity", f"{score_results['text_similarity']}%")
+            st.metric("Keyword Score", f"{score_results['keyword_score']}%")
 
-    st.subheader("📊 Score Breakdown")
-    b = score_results["breakdown"]
-    breakdown_col1, breakdown_col2, breakdown_col3 = st.columns(3)
-
-    with breakdown_col1:
-        st.metric("Skill Contribution (50%)", f"{b['skill_match_contribution']}")
-    with breakdown_col2:
-        st.metric("Similarity Contribution (40%)", f"{b['similarity_contribution']}")
-    with breakdown_col3:
-        st.metric("Keyword Contribution (10%)", f"{b['keyword_contribution']}")
+        ats = score_results["ats_score"]
+        if ats >= 80:
+            st.success(f"🟢 **{score_results['category']}** — Well optimized!")
+        elif ats >= 60:
+            st.info(f"🔵 **{score_results['category']}** — Good with room to improve.")
+        elif ats >= 40:
+            st.warning(f"🟡 **{score_results['category']}** — Needs tailoring.")
+        else:
+            st.error(f"🔴 **{score_results['category']}** — Significant changes needed.")
 
     st.divider()
 
+    # ── Section 2: Charts Row ─────────────────────────────────────────────────
+    st.subheader("📊 Visual Analysis")
+
+    chart_col1, chart_col2 = st.columns(2)
+
+    with chart_col1:
+        breakdown_fig = create_score_breakdown_chart(score_results["breakdown"])
+        st.plotly_chart(breakdown_fig, use_container_width=True)
+
+    with chart_col2:
+        skill_fig = create_skill_match_chart(
+            skill_results["matched_skills"],
+            skill_results["missing_skills"],
+            skill_results["extra_skills"],
+        )
+        st.plotly_chart(skill_fig, use_container_width=True)
+
+    keyword_fig = create_keyword_bar_chart(cleaned_resume, cleaned_jd)
+    st.plotly_chart(keyword_fig, use_container_width=True)
+
+    st.divider()
+
+    # ── Section 3: Skills Analysis ────────────────────────────────────────────
     st.subheader("🛠️ Skills Analysis")
+
     skills_col1, skills_col2, skills_col3 = st.columns(3)
 
     with skills_col1:
@@ -170,6 +183,7 @@ if analyze_clicked:
 
     st.divider()
 
+    # ── Section 4: Suggestions ────────────────────────────────────────────────
     st.subheader("💡 Improvement Suggestions")
     for i, suggestion in enumerate(suggestions, 1):
         st.warning(f"**{i}.** {suggestion}")
@@ -187,7 +201,7 @@ if analyze_clicked:
 st.divider()
 st.markdown(
     "<div style='text-align:center;color:gray;font-size:0.85em;'>"
-    "Built with Python · Streamlit · spaCy · scikit-learn"
+    "Built with Python · Streamlit · spaCy · scikit-learn · Plotly"
     "</div>",
     unsafe_allow_html=True,
 )
